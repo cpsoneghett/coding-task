@@ -1,6 +1,7 @@
 package com.cpsoneghett.codingtask.controller;
 
 import com.cpsoneghett.codingtask.domain.Device;
+import com.cpsoneghett.codingtask.domain.DeviceFilter;
 import com.cpsoneghett.codingtask.domain.DeviceRequestDto;
 import com.cpsoneghett.codingtask.service.DeviceService;
 import com.cpsoneghett.codingtask.service.DeviceServiceImpl;
@@ -8,6 +9,8 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.github.fge.jsonpatch.JsonPatch;
 import com.github.fge.jsonpatch.JsonPatchException;
 import jakarta.validation.Valid;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -18,8 +21,6 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-
-import java.util.List;
 
 @RestController
 @RequestMapping("/v1/devices")
@@ -32,8 +33,8 @@ public class DeviceController {
     }
 
     @GetMapping
-    public ResponseEntity<List<Device>> findAll() {
-        return ResponseEntity.ok().body(deviceService.findAll());
+    public ResponseEntity<Page<Device>> findAll(DeviceFilter filter, Pageable pageable) {
+        return ResponseEntity.ok().body(deviceService.findAll(filter, pageable));
     }
 
     @GetMapping("/{id}")

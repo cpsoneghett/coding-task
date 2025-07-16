@@ -3,6 +3,8 @@ package com.cpsoneghett.codingtask.exception.handler;
 
 import com.cpsoneghett.codingtask.exception.BusinessException;
 import com.cpsoneghett.codingtask.exception.CustomError;
+import com.cpsoneghett.codingtask.exception.DeviceInUseException;
+import com.cpsoneghett.codingtask.exception.DeviceNotFoundException;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.github.fge.jsonpatch.JsonPatchException;
 import jakarta.validation.ConstraintViolation;
@@ -109,7 +111,15 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     public ResponseEntity<Object> handleBusinessException(BusinessException ex,
                                                           WebRequest request) {
 
-        HttpStatus status = HttpStatus.BAD_REQUEST;
+        HttpStatus status;
+
+        if (ex instanceof DeviceNotFoundException)
+            status = HttpStatus.NOT_FOUND;
+        else if (ex instanceof DeviceInUseException)
+            status = HttpStatus.CONFLICT;
+        else
+            status = HttpStatus.BAD_REQUEST;
+
         ProblemType problemType = ProblemType.BUSINESS_ERROR;
 
         String detailMessage = ex.toString();
