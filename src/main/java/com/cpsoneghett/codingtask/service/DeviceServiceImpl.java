@@ -2,8 +2,17 @@ package com.cpsoneghett.codingtask.service;
 
 import com.cpsoneghett.codingtask.domain.Device;
 import com.cpsoneghett.codingtask.domain.DeviceRequestDto;
+import com.cpsoneghett.codingtask.domain.DeviceState;
+import com.cpsoneghett.codingtask.exception.BusinessException;
+import com.cpsoneghett.codingtask.exception.DeviceNotFoundException;
 import com.cpsoneghett.codingtask.repository.DeviceRepository;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.fge.jsonpatch.JsonPatch;
+import com.github.fge.jsonpatch.JsonPatchException;
 import jakarta.persistence.EntityNotFoundException;
+import org.springframework.beans.BeanUtils;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.stereotype.Service;
 
@@ -13,19 +22,24 @@ import java.util.List;
 public class DeviceServiceImpl implements DeviceService {
 
     private final DeviceRepository deviceRepository;
+    private final ObjectMapper objectMapper;
 
-    public DeviceServiceImpl(DeviceRepository deviceRepository) {
+    public DeviceServiceImpl(DeviceRepository deviceRepository, ObjectMapper objectMapper) {
         this.deviceRepository = deviceRepository;
+        this.objectMapper = objectMapper;
     }
 
+    @Override
     public List<Device> findAll() {
         return deviceRepository.findAll();
     }
 
+    @Override
     public Device findById(Long id) {
-        return deviceRepository.findById(id).orElseThrow(() -> new EntityNotFoundException("Device with ID " + id + " not found."));
+        return deviceRepository.findById(id).orElseThrow(() -> new DeviceNotFoundException(id));
     }
 
+    @Override
     public Device save(DeviceRequestDto device) {
 
         Device newDevice = new Device(device.name(), device.brand(), device.state());
@@ -33,23 +47,39 @@ public class DeviceServiceImpl implements DeviceService {
         return deviceRepository.save(newDevice);
     }
 
+    @Override
     public void delete(Long id) {
         try {
-            deviceRepository.deleteById(id);
+
+            Device device = deviceRepository.findById(id).orElseThrow(() -> new DeviceNotFoundException(id));
+
+            if (!DeviceState.IN_USE.equals(device.getState()))
+                deviceRepository.deleteById(id);
+            else
+                throw new BusinessException("Device with ID " + id + " is already in use.");
+
         } catch (EmptyResultDataAccessException ex) {
             throw new EntityNotFoundException();
         }
     }
 
-    public Device update(Device device) {
-        if (device == null) {
-            throw new IllegalArgumentException("Device cannot be null.");
-        }
-        // Validate ID for update
-        if (device.getId() == null || device.getId() <= 0) {
-            throw new IllegalArgumentException("Device ID must not be null or negative for update operation.");
-        }
+    @Override
+    public Device update(Long id, DeviceRequestDto deviceDto) {
 
-        return deviceRepository.save(device);
+        Device deviceFound = deviceRepository.findById(id).orElseThrow(() -> new DeviceNotFoundException(id));
+
+        BeanUtils.copyProperties(deviceDto, deviceFound);
+
+        return deviceRepository.save(deviceFound);
+    }
+
+    @Override
+    public Device partialUpdate(Long id, JsonPatch jsonPatch) throws JsonPatchException, JsonProcessingException {
+
+        Device deviceFound = deviceRepository.findById(id).orElseThrow(() -> new DeviceNotFoundException(id));
+
+        JsonNode patched = jsonPatch.apply(objectMapper.convertValue(deviceFound, JsonNode.class));
+
+        return deviceRepository.save(objectMapper.treeToValue(patched, Device.class));
     }
 }

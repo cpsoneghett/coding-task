@@ -1,8 +1,5 @@
-set foreign_key_checks = 0;
 
 delete from device;
-
-set foreign_key_checks = 1;
 
 alter table device auto_increment = 1;
 
