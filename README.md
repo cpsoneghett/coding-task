@@ -47,3 +47,4 @@ http://localhost:8081/swagger-ui/index.html
 2) Caching search;
 3) To implement security for the endpoints;
 4) Review code to performance improvement.
+5) Add more relevant information to README.
