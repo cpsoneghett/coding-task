@@ -11,6 +11,13 @@ services:
       - "3306:3306"
     volumes:
       - db-data:/var/lib/mysql
+    # Healthcheck ensures the database is ready before the app starts
+    healthcheck:
+      test: [ "CMD", "mysqladmin" ,"ping", "-h", "localhost", "-u", "root", "-p$$MYSQL_ROOT_PASSWORD" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   app:
     build:
@@ -18,15 +25,16 @@ services:
       dockerfile: Dockerfile
     container_name: coding-task-container
     ports:
-      - "8080:8080"
+      - "8081:8081"
     environment:
-      MYSQL_HOST: localhost
+      MYSQL_HOST: mysql
       MYSQL_PORT: 3306
       MYSQL_DATABASE: coding-task
       MYSQL_USER: root
       MYSQL_PASSWORD: root
     depends_on:
-      - mysql
+      mysql:
+        condition: service_healthy
 
 volumes:
   db-data:
