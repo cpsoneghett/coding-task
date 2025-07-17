@@ -10,6 +10,7 @@ import jakarta.persistence.criteria.CriteriaQuery;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Root;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -77,6 +78,7 @@ class DeviceRepositoryQueryImplTest {
     }
 
     @Test
+    @DisplayName("Should return page of devices")
     void filter_ShouldReturnPageOfDevices() {
         Page<Device> result = deviceRepositoryQuery.filter(filter, pageable);
 
@@ -98,6 +100,7 @@ class DeviceRepositoryQueryImplTest {
     }
 
     @Test
+    @DisplayName("Should return page of devices")
     void filter_ShouldHandleEmptyFilter() {
         DeviceFilter emptyFilter = new DeviceFilter(null, null);
         Page<Device> result = deviceRepositoryQuery.filter(emptyFilter, pageable);

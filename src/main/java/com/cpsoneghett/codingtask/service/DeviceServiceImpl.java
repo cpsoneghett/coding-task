@@ -7,7 +7,7 @@ import com.cpsoneghett.codingtask.domain.DeviceState;
 import com.cpsoneghett.codingtask.exception.DeviceInUseException;
 import com.cpsoneghett.codingtask.exception.DeviceNotFoundException;
 import com.cpsoneghett.codingtask.repository.DeviceRepository;
-import com.fasterxml.jackson.core.JsonProcessingException;
+import com.cpsoneghett.codingtask.utils.OperationType;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.fge.jsonpatch.JsonPatch;
@@ -18,6 +18,8 @@ import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+
+import java.io.IOException;
 
 @Service
 public class DeviceServiceImpl implements DeviceService {
@@ -51,14 +53,12 @@ public class DeviceServiceImpl implements DeviceService {
     @Override
     public void delete(Long id) {
         try {
+            Device deviceFound = this.findById(id);
 
-            Device device = deviceRepository.findById(id).orElseThrow(() -> new DeviceNotFoundException(id));
+            if (DeviceState.IN_USE.equals(deviceFound.getState()))
+                throw new DeviceInUseException(deviceFound.getId(), OperationType.DELETE);
 
-            if (!DeviceState.IN_USE.equals(device.getState()))
-                deviceRepository.deleteById(id);
-            else
-                throw new DeviceInUseException(id);
-
+            deviceRepository.deleteById(id);
         } catch (EmptyResultDataAccessException ex) {
             throw new EntityNotFoundException();
         }
@@ -67,20 +67,32 @@ public class DeviceServiceImpl implements DeviceService {
     @Override
     public Device update(Long id, DeviceRequestDto deviceDto) {
 
-        Device deviceFound = deviceRepository.findById(id).orElseThrow(() -> new DeviceNotFoundException(id));
+        Device deviceFound = this.findById(id);
 
-        BeanUtils.copyProperties(deviceDto, deviceFound);
+        if (deviceFound.isEqualsDto(deviceDto)) return deviceFound;
+
+        if (DeviceState.IN_USE.equals(deviceFound.getState())) {
+            boolean isChangingName = !deviceDto.name().trim().equals(deviceFound.getName());
+            boolean isChangingBrand = !deviceDto.brand().trim().equals(deviceFound.getBrand());
+
+            if (isChangingName || isChangingBrand)
+                throw new DeviceInUseException(deviceFound.getId(), OperationType.UPDATE);
+
+        }
+
+        BeanUtils.copyProperties(deviceDto, deviceFound, "id");
 
         return deviceRepository.save(deviceFound);
     }
 
     @Override
-    public Device partialUpdate(Long id, JsonPatch jsonPatch) throws JsonPatchException, JsonProcessingException {
+    public Device partialUpdate(Long id, JsonPatch jsonPatch) throws JsonPatchException, IOException {
 
-        Device deviceFound = deviceRepository.findById(id).orElseThrow(() -> new DeviceNotFoundException(id));
+        Device deviceFound = this.findById(id);
 
         JsonNode patched = jsonPatch.apply(objectMapper.convertValue(deviceFound, JsonNode.class));
 
         return deviceRepository.save(objectMapper.treeToValue(patched, Device.class));
     }
+
 }

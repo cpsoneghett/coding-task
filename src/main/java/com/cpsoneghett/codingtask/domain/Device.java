@@ -1,5 +1,6 @@
 package com.cpsoneghett.codingtask.domain;
 
+import com.cpsoneghett.codingtask.validation.DeviceCreateValidation;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -8,23 +9,33 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.validation.GroupSequence;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import org.hibernate.annotations.CreationTimestamp;
 
 import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "device")
+@GroupSequence({Device.class, DeviceCreateValidation.Second.class})
 public class Device {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @NotBlank(message = "Device name cannot be null or empty.")
+    @Size(min = 2, max = 100, message = "Device name must be between 2 and 100 characters.", groups = {DeviceCreateValidation.Second.class})
     private String name;
 
+    @NotBlank(message = "Device brand cannot be null or empty.")
+    @Size(min = 2, max = 100, message = "Device brand must be between 2 and 100 characters.", groups = {DeviceCreateValidation.Second.class})
     private String brand;
 
     @Enumerated(EnumType.STRING)
+    @NotNull(message = "Device state cannot be null.")
     private DeviceState state;
 
     @CreationTimestamp
@@ -75,6 +86,10 @@ public class Device {
 
     public LocalDateTime getCreatedAt() {
         return createdAt;
+    }
+
+    public boolean isEqualsDto(DeviceRequestDto dto) {
+        return this.name.equals(dto.name().trim()) && this.brand.equals(dto.brand().trim()) && this.state.equals(dto.state());
     }
 
 }

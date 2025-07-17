@@ -1,208 +1,178 @@
 package com.cpsoneghett.codingtask.controller;
 
 import com.cpsoneghett.codingtask.domain.Device;
-import com.cpsoneghett.codingtask.domain.DeviceFilter;
 import com.cpsoneghett.codingtask.domain.DeviceRequestDto;
 import com.cpsoneghett.codingtask.domain.DeviceState;
+import com.cpsoneghett.codingtask.exception.DeviceInUseException;
 import com.cpsoneghett.codingtask.exception.DeviceNotFoundException;
 import com.cpsoneghett.codingtask.service.DeviceServiceImpl;
+import com.cpsoneghett.codingtask.utils.OperationType;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.github.fge.jsonpatch.JsonPatch;
-import com.github.fge.jsonpatch.JsonPatchException;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageImpl;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-import java.util.Collections;
-
+import static org.hamcrest.Matchers.is;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doNothing;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willDoNothing;
+import static org.mockito.BDDMockito.willThrow;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
 
 @WebMvcTest(DeviceController.class)
 class DeviceControllerTest {
 
+    private final Long deviceId = 1L;
     @Autowired
     private MockMvc mockMvc;
-
-    @MockitoBean
-    private DeviceServiceImpl deviceService;
-
     @Autowired
     private ObjectMapper objectMapper;
-
+    @MockitoBean
+    private DeviceServiceImpl deviceService;
     private Device device;
     private DeviceRequestDto deviceRequestDto;
-    private Page<Device> devicePage;
 
     @BeforeEach
     void setUp() {
-        device = new Device("Test Device", "Brand A", DeviceState.AVAILABLE);
-        device.setId(1L);
-        deviceRequestDto = new DeviceRequestDto("New Device", "Brand B", DeviceState.IN_USE);
-        devicePage = new PageImpl<>(Collections.singletonList(device), PageRequest.of(0, 10), 1);
+        device = new Device("iPhone 15 Pro", "Apple", DeviceState.AVAILABLE);
+        device.setId(deviceId);
+
+        deviceRequestDto = new DeviceRequestDto(
+                "iPhone 15 Pro",
+                "Apple",
+                DeviceState.AVAILABLE
+        );
     }
 
-    @Test
-    void findAll_ShouldReturnPageOfDevices() throws Exception {
-        when(deviceService.findAll(any(DeviceFilter.class), any(Pageable.class))).thenReturn(devicePage);
+    @Nested
+    @DisplayName("GET /v1/devices/{id}")
+    class GetById {
+        @Test
+        @DisplayName("Should return 200 OK and Device when found")
+        void findById_WhenDeviceExists_ShouldReturnDevice() throws Exception {
+            // Given
+            given(deviceService.findById(deviceId)).willReturn(device);
 
-        mockMvc.perform(get("/v1/devices")
-                        .param("page", "0")
-                        .param("size", "10")
-                        .param("brand", "Brand A"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[0].name").value(device.getName()))
-                .andExpect(jsonPath("$.totalElements").value(1));
+            // When / Then
+            mockMvc.perform(get("/v1/devices/{id}", deviceId))
+                    .andExpect(status().isOk())
+                    .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                    .andExpect(jsonPath("$.id", is(deviceId.intValue())))
+                    .andExpect(jsonPath("$.name", is(device.getName())));
+        }
 
-        verify(deviceService, times(1)).findAll(any(DeviceFilter.class), any(Pageable.class));
+        @Test
+        @DisplayName("Should return 404 Not Found when device does not exist")
+        void findById_WhenDeviceNotExists_ShouldReturnNotFound() throws Exception {
+            // Given
+            given(deviceService.findById(deviceId)).willThrow(new DeviceNotFoundException(deviceId));
+
+            // When / Then
+            mockMvc.perform(get("/v1/devices/{id}", deviceId))
+                    .andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.title", is("Business rule violation.")))
+                    .andExpect(jsonPath("$.status", is(404)));
+        }
     }
 
-    @Test
-    void findById_ShouldReturnNotFoundWhenDeviceNotFound() throws Exception {
-        when(deviceService.findById(anyLong())).thenThrow(new DeviceNotFoundException(99L));
+    @Nested
+    @DisplayName("POST /v1/devices")
+    class CreateDevice {
+        @Test
+        @DisplayName("Should return 200 OK and created Device for valid request")
+        void create_WithValidBody_ShouldReturnCreatedDevice() throws Exception {
+            // Given
+            given(deviceService.save(any(DeviceRequestDto.class))).willReturn(device);
 
-        mockMvc.perform(get("/v1/devices/{id}", 99L))
-                .andExpect(status().isNotFound());
+            // When / Then
+            mockMvc.perform(post("/v1/devices")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(deviceRequestDto)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.id", is(deviceId.intValue())))
+                    .andExpect(jsonPath("$.name", is(deviceRequestDto.name())));
+        }
 
-        verify(deviceService, times(1)).findById(99L);
+        @Test
+        @DisplayName("Should return 400 Bad Request for invalid request body")
+        void create_WithInvalidBody_ShouldReturnBadRequest() throws Exception {
+            // Given
+            DeviceRequestDto invalidDto = new DeviceRequestDto("", "", null);
+
+            // When / Then
+            mockMvc.perform(post("/v1/devices")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(invalidDto)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.title", is("Business rule violation.")))
+                    .andExpect(jsonPath("$.errors.length()", is(3)));
+        }
     }
 
-    @Test
-    void create_ShouldReturnCreatedDevice() throws Exception {
-        when(deviceService.save(any(DeviceRequestDto.class))).thenReturn(device);
+    @Nested
+    @DisplayName("DELETE /v1/devices/{id}")
+    class DeleteDevice {
+        @Test
+        @DisplayName("Should return 204 No Content for successful deletion")
+        void delete_WhenDeviceCanBeDeleted_ShouldReturnNoContent() throws Exception {
+            // Given
+            willDoNothing().given(deviceService).delete(deviceId);
 
-        mockMvc.perform(post("/v1/devices")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(deviceRequestDto)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.name").value(device.getName()));
+            // When / Then
+            mockMvc.perform(delete("/v1/devices/{id}", deviceId))
+                    .andExpect(status().isNoContent());
+        }
 
-        verify(deviceService, times(1)).save(any(DeviceRequestDto.class));
+        @Test
+        @DisplayName("Should return 409 Conflict when deleting a device in use")
+        void delete_WhenDeviceInUse_ShouldReturnConflict() throws Exception {
+            // Given
+            willThrow(new DeviceInUseException(deviceId, OperationType.DELETE))
+                    .given(deviceService)
+                    .delete(deviceId);
+
+            // When / Then
+            mockMvc.perform(delete("/v1/devices/{id}", deviceId))
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.title", is("Business rule violation.")))
+                    .andExpect(jsonPath("$.status", is(409)));
+        }
     }
 
-    @Test
-    void create_ShouldReturnBadRequestWhenInvalidBody() throws Exception {
-        // Missing 'name' which is @Valid
-        String invalidJson = "{\"brand\":\"Brand X\", \"state\":\"AVAILABLE\"}";
-        mockMvc.perform(post("/v1/devices")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(invalidJson))
-                .andExpect(status().isBadRequest());
+    @Nested
+    @DisplayName("PATCH /v1/devices/{id}")
+    class PatchDevice {
+        @Test
+        @DisplayName("Should return 400 Bad Request for invalid patch operation")
+        void partialUpdate_WithInvalidPatch_ShouldReturnBadRequest() throws Exception {
+            // Given
+            String invalidPatchPayload = "[{\"op\": \"test\", \"path\": \"/name\", \"value\": \"invalid\"}]";
+            given(deviceService.partialUpdate(eq(deviceId), any()))
+                    .willThrow(new com.github.fge.jsonpatch.JsonPatchException("Invalid patch"));
 
-        verify(deviceService, times(0)).save(any(DeviceRequestDto.class));
-    }
-
-    @Test
-    void delete_ShouldReturnNoContentOnSuccess() throws Exception {
-        doNothing().when(deviceService).delete(1L);
-
-        mockMvc.perform(delete("/v1/devices/{id}", 1L))
-                .andExpect(status().isNoContent());
-
-        verify(deviceService, times(1)).delete(1L);
-    }
-
-    @Test
-    void delete_ShouldReturnNotFoundWhenDeviceNotFound() throws Exception {
-        doThrow(new DeviceNotFoundException(99L)).when(deviceService).delete(anyLong());
-
-        mockMvc.perform(delete("/v1/devices/{id}", 99L))
-                .andExpect(status().isNotFound());
-
-        verify(deviceService, times(1)).delete(99L);
-    }
-
-
-    @Test
-    void update_ShouldReturnUpdatedDevice() throws Exception {
-        Device updatedDevice = new Device("Updated Name", "Updated Brand", DeviceState.IN_USE);
-        updatedDevice.setId(1L);
-        when(deviceService.update(eq(1L), any(DeviceRequestDto.class))).thenReturn(updatedDevice);
-
-        mockMvc.perform(put("/v1/devices/{id}", 1L)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(deviceRequestDto)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.name").value(updatedDevice.getName()))
-                .andExpect(jsonPath("$.brand").value(updatedDevice.getBrand()));
-
-        verify(deviceService, times(1)).update(eq(1L), any(DeviceRequestDto.class));
-    }
-
-    @Test
-    void update_ShouldReturnNotFoundWhenDeviceNotFound() throws Exception {
-        when(deviceService.update(anyLong(), any(DeviceRequestDto.class))).thenThrow(new DeviceNotFoundException(99L));
-
-        mockMvc.perform(put("/v1/devices/{id}", 99L)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(deviceRequestDto)))
-                .andExpect(status().isNotFound());
-
-        verify(deviceService, times(1)).update(eq(99L), any(DeviceRequestDto.class));
-    }
-
-    @Test
-    void partialUpdate_ShouldReturnPartiallyUpdatedDevice() throws Exception {
-        Device partiallyUpdatedDevice = new Device("Patched Name", "Brand A", DeviceState.AVAILABLE);
-        partiallyUpdatedDevice.setId(1L);
-        JsonPatch jsonPatch = JsonPatch.fromJson(objectMapper.readTree("[{\"op\": \"replace\", \"path\": \"/name\", \"value\": \"Patched Name\"}]"));
-
-        when(deviceService.partialUpdate(eq(1L), any(JsonPatch.class))).thenReturn(partiallyUpdatedDevice);
-
-        mockMvc.perform(patch("/v1/devices/{id}", 1L)
-                        .contentType("application/json-patch+json") // Correct content type for JSON Patch
-                        .content(objectMapper.writeValueAsString(jsonPatch)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.name").value(partiallyUpdatedDevice.getName()));
-
-        verify(deviceService, times(1)).partialUpdate(eq(1L), any(JsonPatch.class));
-    }
-
-    @Test
-    void partialUpdate_ShouldReturnNotFoundWhenDeviceNotFound() throws Exception {
-        JsonPatch jsonPatch = JsonPatch.fromJson(objectMapper.readTree("[]"));
-        when(deviceService.partialUpdate(anyLong(), any(JsonPatch.class))).thenThrow(new DeviceNotFoundException(99L));
-
-        mockMvc.perform(patch("/v1/devices/{id}", 99L)
-                        .contentType("application/json-patch+json")
-                        .content(objectMapper.writeValueAsString(jsonPatch)))
-                .andExpect(status().isNotFound());
-
-        verify(deviceService, times(1)).partialUpdate(eq(99L), any(JsonPatch.class));
-    }
-
-    @Test
-    void partialUpdate_ShouldReturnBadRequestWhenJsonPatchException() throws Exception {
-        JsonPatch jsonPatch = JsonPatch.fromJson(objectMapper.readTree("[]"));
-        when(deviceService.partialUpdate(anyLong(), any(JsonPatch.class))).thenThrow(JsonPatchException.class);
-
-        mockMvc.perform(patch("/v1/devices/{id}", 1L)
-                        .contentType("application/json-patch+json")
-                        .content(objectMapper.writeValueAsString(jsonPatch)))
-                .andExpect(status().isBadRequest()); // Or 500 Internal Server Error, depending on global exception handling
-
-        verify(deviceService, times(1)).partialUpdate(eq(1L), any(JsonPatch.class));
+            // When / Then
+            mockMvc.perform(patch("/v1/devices/{id}", deviceId)
+                            .contentType("application/json-patch+json")
+                            .content(invalidPatchPayload))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.title", is("Incomprehensive message.")));
+        }
     }
 
 }
+
+

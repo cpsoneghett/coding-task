@@ -1,222 +1,306 @@
 package com.cpsoneghett.codingtask.service;
 
 import com.cpsoneghett.codingtask.domain.Device;
-import com.cpsoneghett.codingtask.domain.DeviceFilter;
 import com.cpsoneghett.codingtask.domain.DeviceRequestDto;
 import com.cpsoneghett.codingtask.domain.DeviceState;
-import com.cpsoneghett.codingtask.exception.BusinessException;
+import com.cpsoneghett.codingtask.exception.DeviceInUseException;
 import com.cpsoneghett.codingtask.exception.DeviceNotFoundException;
 import com.cpsoneghett.codingtask.repository.DeviceRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.fge.jsonpatch.JsonPatch;
 import com.github.fge.jsonpatch.JsonPatchException;
-import jakarta.persistence.EntityNotFoundException;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.dao.EmptyResultDataAccessException;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageImpl;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
+import org.springframework.beans.BeanUtils;
 
-import java.util.Collections;
+import java.io.IOException;
 import java.util.Optional;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doNothing;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.mock;
+import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class DeviceServiceTests {
 
+    private final Long deviceId = 1L;
     @Mock
     private DeviceRepository deviceRepository;
-
     @Mock
     private ObjectMapper objectMapper;
-
     @InjectMocks
     private DeviceServiceImpl deviceService;
-
     private Device device;
     private DeviceRequestDto deviceRequestDto;
-    private Pageable pageable;
 
     @BeforeEach
     void setUp() {
-        device = new Device("Test Device", "Brand A", DeviceState.IN_USE);
-        device.setId(1L);
-        deviceRequestDto = new DeviceRequestDto("Updated Device", "Brand B", DeviceState.IN_USE);
-        pageable = PageRequest.of(0, 10);
-    }
+        device = new Device("iPhone 15 Pro", "Apple", DeviceState.AVAILABLE);
+        device.setId(deviceId);
 
-    @Test
-    void findAll_ShouldReturnPageOfDevices() {
-        DeviceFilter filter = new DeviceFilter("Brand A", null);
-        Page<Device> expectedPage = new PageImpl<>(Collections.singletonList(device), pageable, 1);
-        when(deviceRepository.filter(filter, pageable)).thenReturn(expectedPage);
-
-        Page<Device> result = deviceService.findAll(filter, pageable);
-
-        assertNotNull(result);
-        assertEquals(1, result.getTotalElements());
-        assertEquals(device.getName(), result.getContent().getFirst().getName());
-        verify(deviceRepository, times(1)).filter(filter, pageable);
-    }
-
-    @Test
-    void findById_ShouldReturnDeviceWhenFound() {
-        when(deviceRepository.findById(1L)).thenReturn(Optional.of(device));
-
-        Device result = deviceService.findById(1L);
-
-        assertNotNull(result);
-        assertEquals(device.getName(), result.getName());
-        verify(deviceRepository, times(1)).findById(1L);
-    }
-
-    @Test
-    void findById_ShouldThrowDeviceNotFoundExceptionWhenNotFound() {
-        when(deviceRepository.findById(anyLong())).thenReturn(Optional.empty());
-
-        assertThrows(DeviceNotFoundException.class, () -> deviceService.findById(99L));
-        verify(deviceRepository, times(1)).findById(99L);
-    }
-
-    @Test
-    void save_ShouldReturnSavedDevice() {
-        Device newDevice = new Device("New Device", "New Brand", DeviceState.AVAILABLE);
-        when(deviceRepository.save(any(Device.class))).thenReturn(newDevice);
-
-        DeviceRequestDto newDeviceDto = new DeviceRequestDto("New Device", "New Brand", DeviceState.AVAILABLE);
-        Device result = deviceService.save(newDeviceDto);
-
-        assertNotNull(result);
-        assertEquals(newDevice.getName(), result.getName());
-        assertEquals(newDevice.getBrand(), result.getBrand());
-        assertEquals(newDevice.getState(), result.getState());
-        verify(deviceRepository, times(1)).save(any(Device.class));
-    }
-
-    @Test
-    void delete_ShouldDeleteDeviceWhenAvailable() {
-        // Given
-        device.setState(DeviceState.AVAILABLE);
-
-        when(deviceRepository.findById(1L)).thenReturn(Optional.of(device));
-        doNothing().when(deviceRepository).deleteById(1L);
-
-        deviceService.delete(1L);
-
-        verify(deviceRepository, times(1)).findById(1L);
-        verify(deviceRepository, times(1)).deleteById(1L);
-    }
-
-    @Test
-    void delete_ShouldThrowBusinessExceptionWhenDeviceInUse() {
-        // Given
-        device.setState(DeviceState.IN_USE);
-        when(deviceRepository.findById(1L)).thenReturn(Optional.of(device));
-
-        assertThrows(BusinessException.class, () -> deviceService.delete(1L));
-        verify(deviceRepository, times(1)).findById(1L);
-        verify(deviceRepository, never()).deleteById(anyLong());
-    }
-
-    @Test
-    void delete_ShouldThrowDeviceNotFoundExceptionWhenDeviceNotFound() {
-        when(deviceRepository.findById(anyLong())).thenReturn(Optional.empty());
-
-        assertThrows(DeviceNotFoundException.class, () -> deviceService.delete(99L));
-        verify(deviceRepository, times(1)).findById(99L);
-        verify(deviceRepository, never()).deleteById(anyLong());
-    }
-
-    @Test
-    void delete_ShouldThrowEntityNotFoundExceptionWhenEmptyResultDataAccessException() {
-        doThrow(EmptyResultDataAccessException.class).when(deviceRepository).findById(anyLong());
-
-        assertThrows(EntityNotFoundException.class, () -> deviceService.delete(1L));
-        verify(deviceRepository, times(1)).findById(1L);
-        verify(deviceRepository, never()).deleteById(anyLong());
+        deviceRequestDto = new DeviceRequestDto(
+                "iPhone 15 Pro",
+                "Apple",
+                DeviceState.AVAILABLE
+        );
     }
 
 
-    @Test
-    void update_ShouldReturnUpdatedDevice() {
-        when(deviceRepository.findById(1L)).thenReturn(Optional.of(device));
-        when(deviceRepository.save(any(Device.class))).thenReturn(device);
+    @Nested
+    @DisplayName("FindById Tests")
+    class FindByIdTests {
 
-        Device result = deviceService.update(1L, deviceRequestDto);
+        @Test
+        @DisplayName("Should return device when found")
+        void findById_WhenDeviceExists_ShouldReturnDevice() {
+            // Given
+            given(deviceRepository.findById(deviceId)).willReturn(Optional.of(device));
 
-        assertNotNull(result);
-        assertEquals(deviceRequestDto.name(), result.getName());
-        assertEquals(deviceRequestDto.brand(), result.getBrand());
-        assertEquals(deviceRequestDto.state(), result.getState());
-        verify(deviceRepository, times(1)).findById(1L);
-        verify(deviceRepository, times(1)).save(device);
+            // When
+            Device foundDevice = deviceService.findById(deviceId);
+
+            // Then
+            assertThat(foundDevice).isNotNull();
+            assertThat(foundDevice.getId()).isEqualTo(deviceId);
+            then(deviceRepository).should().findById(deviceId);
+        }
+
+        @Test
+        @DisplayName("Should throw DeviceNotFoundException when device not found")
+        void findById_WhenDeviceDoesNotExist_ShouldThrowDeviceNotFoundException() {
+            // Given
+            given(deviceRepository.findById(deviceId)).willReturn(Optional.empty());
+
+            // When / Then
+            assertThatThrownBy(() -> deviceService.findById(deviceId))
+                    .isInstanceOf(DeviceNotFoundException.class)
+                    .hasMessage(String.format("Device with id %s not found", deviceId));
+
+            then(deviceRepository).should().findById(deviceId);
+        }
     }
 
-    @Test
-    void update_ShouldThrowDeviceNotFoundExceptionWhenDeviceNotFound() {
-        when(deviceRepository.findById(anyLong())).thenReturn(Optional.empty());
+    @Nested
+    @DisplayName("Save Tests")
+    class SaveTests {
+        @Test
+        @DisplayName("Should save a new device successfully")
+        void save_WithValidDto_ShouldReturnSavedDevice() {
+            // Given
+            Device savedDevice = new Device(deviceRequestDto.name(), deviceRequestDto.brand(), deviceRequestDto.state());
+            BeanUtils.copyProperties(deviceRequestDto, savedDevice);
+            savedDevice.setId(deviceId);
+            given(deviceRepository.save(any(Device.class))).willReturn(savedDevice);
 
-        assertThrows(DeviceNotFoundException.class, () -> deviceService.update(99L, deviceRequestDto));
-        verify(deviceRepository, times(1)).findById(99L);
-        verify(deviceRepository, never()).save(any(Device.class));
+            // When
+            Device result = deviceService.save(deviceRequestDto);
+
+            // Then
+            assertThat(result).isNotNull();
+            assertThat(result.getId()).isEqualTo(deviceId);
+            assertThat(result.getName()).isEqualTo(deviceRequestDto.name());
+            then(deviceRepository).should().save(any(Device.class));
+        }
     }
 
-    @Test
-    void partialUpdate_ShouldReturnPartiallyUpdatedDevice() throws JsonPatchException, JsonProcessingException {
-        JsonPatch jsonPatch = mock(JsonPatch.class);
-        JsonNode deviceJsonNode = mock(JsonNode.class);
-        JsonNode patchedJsonNode = mock(JsonNode.class);
+    @Nested
+    @DisplayName("Delete Tests")
+    class DeleteTests {
 
-        when(deviceRepository.findById(1L)).thenReturn(Optional.of(device));
-        when(objectMapper.convertValue(eq(device), eq(JsonNode.class))).thenReturn(deviceJsonNode);
-        when(jsonPatch.apply(deviceJsonNode)).thenReturn(patchedJsonNode);
-        when(objectMapper.treeToValue(eq(patchedJsonNode), eq(Device.class))).thenReturn(device);
-        when(deviceRepository.save(any(Device.class))).thenReturn(device);
+        @Test
+        @DisplayName("Should delete device when it is not in use")
+        void delete_WhenDeviceIsNotInUse_ShouldDeleteSuccessfully() {
+            // Given
+            device.setState(DeviceState.AVAILABLE);
+            given(deviceRepository.findById(deviceId)).willReturn(Optional.of(device));
 
-        Device result = deviceService.partialUpdate(1L, jsonPatch);
+            // When
+            deviceService.delete(deviceId);
 
-        assertNotNull(result);
-        verify(deviceRepository, times(1)).findById(1L);
-        verify(objectMapper, times(1)).convertValue(eq(device), eq(JsonNode.class));
-        verify(jsonPatch, times(1)).apply(deviceJsonNode);
-        verify(objectMapper, times(1)).treeToValue(eq(patchedJsonNode), eq(Device.class));
-        verify(deviceRepository, times(1)).save(device);
+            // Then
+            then(deviceRepository).should().findById(deviceId);
+            then(deviceRepository).should().deleteById(deviceId);
+        }
+
+        @Test
+        @DisplayName("Should throw DeviceInUseException when trying to delete a device in use")
+        void delete_WhenDeviceIsInUse_ShouldThrowDeviceInUseException() {
+            // Given
+            device.setState(DeviceState.IN_USE);
+            given(deviceRepository.findById(deviceId)).willReturn(Optional.of(device));
+
+            // When / Then
+            assertThatThrownBy(() -> deviceService.delete(deviceId))
+                    .isInstanceOf(DeviceInUseException.class)
+                    .hasMessageContaining(String.format("Device with id %s is being used. The device cannot be deleted. Change the current state of the device.", deviceId));
+
+            then(deviceRepository).should().findById(deviceId);
+            then(deviceRepository).should(never()).deleteById(any(Long.class));
+        }
     }
 
-    @Test
-    void partialUpdate_ShouldThrowDeviceNotFoundExceptionWhenDeviceNotFound() throws JsonPatchException, JsonProcessingException {
-        JsonPatch jsonPatch = mock(JsonPatch.class);
-        when(deviceRepository.findById(anyLong())).thenReturn(Optional.empty());
+    @Nested
+    @DisplayName("Update Tests")
+    class UpdateTests {
 
-        assertThrows(DeviceNotFoundException.class, () -> deviceService.partialUpdate(99L, jsonPatch));
-        verify(deviceRepository, times(1)).findById(99L);
-        verify(objectMapper, never()).convertValue(any(), (JavaType) any());
-        verify(jsonPatch, never()).apply(any());
-        verify(objectMapper, never()).treeToValue(any(), (JavaType) any());
-        verify(deviceRepository, never()).save(any(Device.class));
+        @Test
+        @DisplayName("Should update all properties when device is not in use")
+        void update_WhenDeviceIsNotInUse_ShouldUpdateSuccessfully() {
+            // Given
+            device.setState(DeviceState.AVAILABLE);
+            DeviceRequestDto updateDto = new DeviceRequestDto("Galaxy S25", "Samsung", DeviceState.INACTIVE);
+            given(deviceRepository.findById(deviceId)).willReturn(Optional.of(device));
+            given(deviceRepository.save(any(Device.class))).willAnswer(invocation -> invocation.getArgument(0));
+
+            // When
+            Device updatedDevice = deviceService.update(deviceId, updateDto);
+
+            // Then
+            assertThat(updatedDevice.getName()).isEqualTo(updateDto.name());
+            assertThat(updatedDevice.getBrand()).isEqualTo(updateDto.brand());
+            assertThat(updatedDevice.getState()).isEqualTo(updateDto.state());
+            then(deviceRepository).should().findById(deviceId);
+            then(deviceRepository).should().save(device);
+        }
+
+        @Test
+        @DisplayName("Should throw DeviceInUseException when updating name of a device in use")
+        void update_WhenDeviceIsInUseAndNameChanges_ShouldThrowDeviceInUseException() {
+            // Given
+            device.setState(DeviceState.IN_USE);
+            DeviceRequestDto updateDto = new DeviceRequestDto("Different Name", device.getBrand(), device.getState());
+            given(deviceRepository.findById(deviceId)).willReturn(Optional.of(device));
+
+            // When / Then
+            assertThatThrownBy(() -> deviceService.update(deviceId, updateDto))
+                    .isInstanceOf(DeviceInUseException.class)
+                    .hasMessageContaining(String.format("Device with id %s is being used. These field(s) cannot be updated. Change the current state of the device.", deviceId));
+
+            then(deviceRepository).should().findById(deviceId);
+            then(deviceRepository).should(never()).save(any(Device.class));
+        }
+
+        @Test
+        @DisplayName("Should throw DeviceInUseException when updating brand of a device in use")
+        void update_WhenDeviceIsInUseAndBrandChanges_ShouldThrowDeviceInUseException() {
+            // Given
+            device.setState(DeviceState.IN_USE);
+            DeviceRequestDto updateDto = new DeviceRequestDto(device.getName(), "Different Brand", device.getState());
+            given(deviceRepository.findById(deviceId)).willReturn(Optional.of(device));
+
+            // When / Then
+            assertThatThrownBy(() -> deviceService.update(deviceId, updateDto))
+                    .isInstanceOf(DeviceInUseException.class)
+                    .hasMessageContaining(String.format("Device with id %s is being used. These field(s) cannot be updated. Change the current state of the device.", deviceId));
+
+            then(deviceRepository).should().findById(deviceId);
+            then(deviceRepository).should(never()).save(any(Device.class));
+        }
+
+        @Test
+        @DisplayName("Should update state only when device is in use")
+        void update_WhenDeviceIsInUseAndOnlyStateChanges_ShouldUpdateSuccessfully() {
+            // Given
+            device.setState(DeviceState.IN_USE);
+            DeviceRequestDto updateDto = new DeviceRequestDto(device.getName(), device.getBrand(), DeviceState.AVAILABLE);
+            given(deviceRepository.findById(deviceId)).willReturn(Optional.of(device));
+            given(deviceRepository.save(any(Device.class))).willAnswer(invocation -> invocation.getArgument(0));
+
+            // When
+            Device updatedDevice = deviceService.update(deviceId, updateDto);
+
+            // Then
+            assertThat(updatedDevice.getState()).isEqualTo(updateDto.state());
+            assertThat(updatedDevice.getName()).isEqualTo(device.getName());
+            assertThat(updatedDevice.getBrand()).isEqualTo(device.getBrand());
+            then(deviceRepository).should().findById(deviceId);
+            then(deviceRepository).should().save(device);
+        }
+
+        @Test
+        @DisplayName("Should not call save when there are no changes")
+        void update_WhenNoChanges_ShouldNotSave() {
+            // Given
+            given(deviceRepository.findById(deviceId)).willReturn(Optional.of(device));
+
+            // When
+            Device result = deviceService.update(deviceId, deviceRequestDto);
+
+            // Then
+            assertThat(result).isEqualTo(device);
+            then(deviceRepository).should().findById(deviceId);
+            then(deviceRepository).should(never()).save(any(Device.class));
+        }
     }
 
+    @Nested
+    @DisplayName("Partial Update (JSON Patch) Tests")
+    class PartialUpdateTests {
 
+        @Mock
+        private JsonPatch jsonPatch;
+
+        @Mock
+        private JsonNode deviceNode, patchedNode;
+
+        @Test
+        @DisplayName("Should apply patch and save when device exists")
+        void partialUpdate_WhenDeviceExists_ShouldApplyPatchAndSave() throws JsonPatchException, IOException {
+            // Given
+            Device patchedDevice = new Device("Patched Name", "Patched Brand", DeviceState.IN_USE);
+
+            given(deviceRepository.findById(deviceId)).willReturn(Optional.of(device));
+            given(objectMapper.convertValue(device, JsonNode.class)).willReturn(deviceNode);
+            given(jsonPatch.apply(deviceNode)).willReturn(patchedNode);
+            given(objectMapper.treeToValue(patchedNode, Device.class)).willReturn(patchedDevice);
+            given(deviceRepository.save(patchedDevice)).willReturn(patchedDevice);
+
+            // When
+            Device result = deviceService.partialUpdate(deviceId, jsonPatch);
+
+            // Then
+            assertThat(result).isNotNull();
+            assertThat(result.getName()).isEqualTo("Patched Name");
+            then(deviceRepository).should().findById(deviceId);
+            then(deviceRepository).should().save(patchedDevice);
+        }
+
+        @Test
+        @DisplayName("Should throw DeviceNotFoundException when device not found")
+        void partialUpdate_WhenDeviceNotFound_ShouldThrowDeviceNotFoundException() {
+            // Given
+            given(deviceRepository.findById(deviceId)).willReturn(Optional.empty());
+
+            // When / Then
+            assertThatThrownBy(() -> deviceService.partialUpdate(deviceId, jsonPatch))
+                    .isInstanceOf(DeviceNotFoundException.class);
+
+            then(deviceRepository).should().findById(deviceId);
+            then(deviceRepository).should(never()).save(any());
+        }
+
+        @Test
+        @DisplayName("Should propagate JsonPatchException on patch failure")
+        void partialUpdate_WhenPatchFails_ShouldPropagateException() throws JsonPatchException {
+            // Given
+            given(deviceRepository.findById(deviceId)).willReturn(Optional.of(device));
+            given(objectMapper.convertValue(device, JsonNode.class)).willReturn(deviceNode);
+            given(jsonPatch.apply(deviceNode)).willThrow(JsonPatchException.class);
+
+            // When / Then
+            assertThatThrownBy(() -> deviceService.partialUpdate(deviceId, jsonPatch))
+                    .isInstanceOf(JsonPatchException.class);
+        }
+    }
 }

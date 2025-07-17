@@ -5,13 +5,13 @@ import com.cpsoneghett.codingtask.domain.DeviceFilter;
 import com.cpsoneghett.codingtask.domain.DeviceRequestDto;
 import com.cpsoneghett.codingtask.service.DeviceService;
 import com.cpsoneghett.codingtask.service.DeviceServiceImpl;
-import com.fasterxml.jackson.core.JsonProcessingException;
+import com.cpsoneghett.codingtask.validation.DeviceCreateValidation;
 import com.github.fge.jsonpatch.JsonPatch;
 import com.github.fge.jsonpatch.JsonPatchException;
-import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -21,6 +21,8 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.io.IOException;
 
 @RestController
 @RequestMapping("/v1/devices")
@@ -43,7 +45,7 @@ public class DeviceController {
     }
 
     @PostMapping
-    public ResponseEntity<Device> create(@RequestBody @Valid DeviceRequestDto device) {
+    public ResponseEntity<Device> create(@RequestBody @Validated(DeviceCreateValidation.class) DeviceRequestDto device) {
         return ResponseEntity.ok().body(deviceService.save(device));
     }
 
@@ -54,12 +56,13 @@ public class DeviceController {
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<Device> update(@PathVariable("id") Long id, @RequestBody @Valid DeviceRequestDto deviceDto) {
+    public ResponseEntity<Device> update(@PathVariable("id") Long id, @RequestBody DeviceRequestDto deviceDto) {
         return ResponseEntity.ok().body(deviceService.update(id, deviceDto));
     }
 
     @PatchMapping("/{id}")
-    public ResponseEntity<Device> partialUpdate(@PathVariable("id") Long id, @RequestBody @Valid JsonPatch jsonPatch) throws JsonPatchException, JsonProcessingException {
+    public ResponseEntity<Device> partialUpdate(@PathVariable("id") Long id, @RequestBody JsonPatch jsonPatch)
+            throws JsonPatchException, IOException {
         return ResponseEntity.ok().body(deviceService.partialUpdate(id, jsonPatch));
     }
 
